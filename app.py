@@ -381,6 +381,56 @@ with tab_dashboard:
 # ABA 2: GERENCIADOR DE CONTAS (LISTA E AÇÕES)
 # ==========================================
 with tab_contas:
+    @st.dialog("✏️ Editar Lançamento")
+    def modal_editar_conta(conta_id):
+        conta = database.obter_conta(conta_id)
+        if not conta:
+            st.error("Conta não encontrada.")
+            return
+            
+        with st.form(f"form_edicao_{conta_id}"):
+            st.write(f"Editando lançamento **#{conta_id}**")
+            desc = st.text_input("Descrição*", value=conta["descricao"])
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                tipo_idx = 0 if conta["tipo"] == "Despesa" else 1
+                tipo = st.selectbox("Tipo*", ["Despesa", "Receita"], index=tipo_idx)
+                valor = st.number_input("Valor (R$)*", min_value=0.01, step=10.0, value=float(conta["valor"]), format="%.2f")
+                
+            with c2:
+                try:
+                    dt_atual = datetime.strptime(str(conta["data_vencimento"]), "%Y-%m-%d").date()
+                except:
+                    dt_atual = date.today()
+                venc = st.date_input("Data de Vencimento*", value=dt_atual)
+                
+                status_opts = ["Pendente", "Pago", "Atrasado"]
+                st_idx = status_opts.index(conta["status"]) if conta["status"] in status_opts else 0
+                status = st.selectbox("Status", status_opts, index=st_idx)
+                
+            categorias_sugeridas = [
+                "Moradia", "Alimentação", "Transporte", "Contas Básicas",
+                "Saúde", "Educação", "Lazer", "Cartão", "Salário", "Serviços", "Investimentos", "Outros"
+            ]
+            if conta["categoria"] not in categorias_sugeridas:
+                categorias_sugeridas.append(conta["categoria"])
+            cat_idx = categorias_sugeridas.index(conta["categoria"]) if conta["categoria"] in categorias_sugeridas else 0
+            categoria = st.selectbox("Categoria", categorias_sugeridas, index=cat_idx)
+            
+            obs = st.text_area("Observações", value=conta["observacoes"] or "")
+            
+            btn_salvar = st.form_submit_button("💾 Salvar Alterações", use_container_width=True)
+            if btn_salvar:
+                if not desc.strip():
+                    st.error("A descrição não pode ficar vazia.")
+                elif valor <= 0:
+                    st.error("O valor deve ser maior que zero.")
+                else:
+                    database.editar_conta(conta_id, desc.strip(), tipo, categoria, valor, venc.isoformat(), status, obs.strip())
+                    st.success("Conta atualizada com sucesso!")
+                    st.rerun()
+
     col_busca, col_exp = st.columns([3, 1])
     with col_busca:
         busca_texto = st.text_input("🔍 Buscar por nome, categoria ou observação:", placeholder="Ex: aluguel, mercado, luz...")
@@ -409,7 +459,7 @@ with tab_contas:
         st.write(f"Mostrando **{len(contas_filtradas)}** lançamentos:")
         
         st.markdown("""
-        <div style="display: grid; grid-template-columns: 1fr 2.5fr 1fr 1.2fr 1fr 1fr 1.5fr; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.06); border-radius: 6px; font-weight: bold; font-size: 0.85rem; color: #94a3b8;">
+        <div style="display: grid; grid-template-columns: 1fr 2.3fr 1fr 1.2fr 1fr 1fr 1.8fr; gap: 8px; padding: 8px 12px; background: rgba(255,255,255,0.06); border-radius: 6px; font-weight: bold; font-size: 0.85rem; color: #94a3b8;">
             <div>VENCIMENTO</div>
             <div>DESCRIÇÃO</div>
             <div>TIPO</div>
@@ -424,7 +474,7 @@ with tab_contas:
             cid = conta["id"]
             cor_tipo = "#4ade80" if conta["tipo"] == "Receita" else "#f87171"
             
-            c_venc, c_desc, c_tipo, c_cat, c_val, c_st, c_act = st.columns([1, 2.5, 1, 1.2, 1, 1, 1.5])
+            c_venc, c_desc, c_tipo, c_cat, c_val, c_st, c_act = st.columns([1, 2.3, 1, 1.2, 1, 1, 1.8])
             
             with c_venc:
                 st.write(formatar_data(conta["data_vencimento"]))
@@ -441,7 +491,7 @@ with tab_contas:
                 badge_class = f"badge-{conta['status'].lower()}"
                 st.markdown(f"<span class='{badge_class}'>{conta['status']}</span>", unsafe_allow_html=True)
             with c_act:
-                col_btn_pago, col_btn_del = st.columns(2)
+                col_btn_pago, col_btn_edit, col_btn_del = st.columns(3)
                 with col_btn_pago:
                     if conta["status"] == "Pago":
                         if st.button("↩️", key=f"desfazer_{cid}", help="Marcar como Pendente"):
@@ -451,6 +501,9 @@ with tab_contas:
                         if st.button("✅", key=f"pagar_{cid}", help="Marcar como Pago"):
                             database.marcar_como_pago(cid, pago=True)
                             st.rerun()
+                with col_btn_edit:
+                    if st.button("✏️", key=f"edit_{cid}", help="Editar Lançamento"):
+                        modal_editar_conta(cid)
                 with col_btn_del:
                     if st.button("🗑️", key=f"del_{cid}", help="Excluir Lançamento"):
                         database.excluir_conta(cid)

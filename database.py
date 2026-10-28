@@ -139,6 +139,34 @@ def marcar_como_pago(conta_id, pago=True):
     conn.commit()
     conn.close()
 
+def obter_conta(conta_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contas WHERE id = ?", (conta_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def editar_conta(conta_id, descricao, tipo, categoria, valor, data_vencimento, status, observacoes=""):
+    conn = get_connection()
+    cursor = conn.cursor()
+    if status == "Pago":
+        cursor.execute("SELECT data_pagamento FROM contas WHERE id = ?", (conta_id,))
+        row = cursor.fetchone()
+        dt_pag = row["data_pagamento"] if row and row["data_pagamento"] else date.today().isoformat()
+    else:
+        dt_pag = None
+        if status == "Pendente" and str(data_vencimento) < date.today().isoformat():
+            status = "Atrasado"
+            
+    cursor.execute("""
+        UPDATE contas
+        SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?
+        WHERE id = ?
+    """, (descricao, tipo, categoria, float(valor), str(data_vencimento), dt_pag, status, observacoes, conta_id))
+    conn.commit()
+    conn.close()
+
 def excluir_conta(conta_id):
     conn = get_connection()
     cursor = conn.cursor()
