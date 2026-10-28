@@ -381,9 +381,42 @@ with tab_dashboard:
 # ABA 2: GERENCIADOR DE CONTAS (LISTA E AÇÕES)
 # ==========================================
 with tab_contas:
+    def obter_conta_direto(cid):
+        if hasattr(database, "obter_conta"):
+            try:
+                res = database.obter_conta(cid)
+                if res:
+                    return res
+            except:
+                pass
+        conn = database.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contas WHERE id = ?", (cid,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def salvar_edicao_direto(cid, desc, tipo, cat, val, venc, stt, obs):
+        if hasattr(database, "editar_conta"):
+            try:
+                database.editar_conta(cid, desc, tipo, cat, val, venc, stt, obs)
+                return
+            except:
+                pass
+        conn = database.get_connection()
+        cursor = conn.cursor()
+        dt_pag = date.today().isoformat() if stt == "Pago" else None
+        cursor.execute("""
+            UPDATE contas
+            SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?
+            WHERE id = ?
+        """, (desc, tipo, cat, float(val), str(venc), dt_pag, stt, obs, cid))
+        conn.commit()
+        conn.close()
+
     @st.dialog("✏️ Editar Lançamento")
     def modal_editar_conta(conta_id):
-        conta = database.obter_conta(conta_id)
+        conta = obter_conta_direto(conta_id)
         if not conta:
             st.error("Conta não encontrada.")
             return
@@ -427,7 +460,7 @@ with tab_contas:
                 elif valor <= 0:
                     st.error("O valor deve ser maior que zero.")
                 else:
-                    database.editar_conta(conta_id, desc.strip(), tipo, categoria, valor, venc.isoformat(), status, obs.strip())
+                    salvar_edicao_direto(conta_id, desc.strip(), tipo, categoria, valor, venc.isoformat(), status, obs.strip())
                     st.success("Conta atualizada com sucesso!")
                     st.rerun()
 
