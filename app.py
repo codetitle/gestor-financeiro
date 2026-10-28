@@ -290,11 +290,36 @@ with kpi4:
     </div>
     """, unsafe_allow_html=True)
 
+# Categorias Inteligentes (incluindo Motorista de App e IRPF)
+CATEGORIAS_PADRAO = [
+    "⛽ Combustível",
+    "🔧 Manutenção & Peças",
+    "🛞 Pneus & Alinhamento",
+    "🛡️ Seguro Auto",
+    "🧼 Lavagem & Higienização",
+    "📱 Celular & Internet (App)",
+    "🚗 Parcela / Aluguel Carro",
+    "📄 IPVA & Licenciamento",
+    "💰 Faturamento Uber/99",
+    "🩺 Saúde (Dedutível IRPF)",
+    "🎓 Educação (Dedutível IRPF)",
+    "Moradia",
+    "Alimentação",
+    "Contas Básicas",
+    "Lazer",
+    "Cartão",
+    "Salário",
+    "Serviços",
+    "Investimentos",
+    "Outros"
+]
+
 # --- NAVEGAÇÃO POR ABAS ---
-tab_dashboard, tab_contas, tab_novo, tab_relatorios, tab_backup = st.tabs([
+tab_dashboard, tab_contas, tab_novo, tab_motorista, tab_relatorios, tab_backup = st.tabs([
     "📊 Visão Geral & Gráficos",
     "📋 Gerenciador de Contas",
     "➕ Novo Lançamento",
+    "🚗 Motorista & IRPF",
     "📈 Análise por Categorias",
     "💾 Backup & Nuvem"
 ])
@@ -396,21 +421,28 @@ with tab_contas:
         conn.close()
         return dict(row) if row else None
 
-    def salvar_edicao_direto(cid, desc, tipo, cat, val, venc, stt, obs):
+    def salvar_edicao_direto(cid, desc, tipo, cat, val, venc, stt, obs, dedutivel=0, comp=""):
         if hasattr(database, "editar_conta"):
             try:
-                database.editar_conta(cid, desc, tipo, cat, val, venc, stt, obs)
+                database.editar_conta(cid, desc, tipo, cat, val, venc, stt, obs, dedutivel, comp)
                 return
             except:
                 pass
         conn = database.get_connection()
         cursor = conn.cursor()
         dt_pag = date.today().isoformat() if stt == "Pago" else None
-        cursor.execute("""
-            UPDATE contas
-            SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?
-            WHERE id = ?
-        """, (desc, tipo, cat, float(val), str(venc), dt_pag, stt, obs, cid))
+        try:
+            cursor.execute("""
+                UPDATE contas
+                SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?, dedutivel_irpf = ?, comprovante_fiscal = ?
+                WHERE id = ?
+            """, (desc, tipo, cat, float(val), str(venc), dt_pag, stt, obs, 1 if dedutivel else 0, comp, cid))
+        except:
+            cursor.execute("""
+                UPDATE contas
+                SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?
+                WHERE id = ?
+            """, (desc, tipo, cat, float(val), str(venc), dt_pag, stt, obs, cid))
         conn.commit()
         conn.close()
 
@@ -442,15 +474,21 @@ with tab_contas:
                 st_idx = status_opts.index(conta["status"]) if conta["status"] in status_opts else 0
                 status = st.selectbox("Status", status_opts, index=st_idx)
                 
-            categorias_sugeridas = [
-                "Moradia", "Alimentação", "Transporte", "Contas Básicas",
-                "Saúde", "Educação", "Lazer", "Cartão", "Salário", "Serviços", "Investimentos", "Outros"
-            ]
-            if conta["categoria"] not in categorias_sugeridas:
-                categorias_sugeridas.append(conta["categoria"])
-            cat_idx = categorias_sugeridas.index(conta["categoria"]) if conta["categoria"] in categorias_sugeridas else 0
-            categoria = st.selectbox("Categoria", categorias_sugeridas, index=cat_idx)
+            cat_list = list(CATEGORIAS_PADRAO)
+            if conta["categoria"] not in cat_list:
+                cat_list.append(conta["categoria"])
+            cat_idx = cat_list.index(conta["categoria"]) if conta["categoria"] in cat_list else 0
+            categoria = st.selectbox("Categoria", cat_list, index=cat_idx)
             
+            st.markdown("---")
+            col_ed1, col_ed2 = st.columns(2)
+            with col_ed1:
+                dedutivel_val = bool(conta.get("dedutivel_irpf", 0))
+                dedutivel = st.checkbox("🎯 Despesa Dedutível / Trabalho (Carro, Saúde ou Educação)", value=dedutivel_val, help="Marque se essa despesa pode abater no seu Imposto de Renda")
+            with col_ed2:
+                comp_val = conta.get("comprovante_fiscal", "") or ""
+                comprovante = st.text_input("Comprovante Fiscal / Recibo (opcional)", value=comp_val, placeholder="Ex: NF-e 4521, Cupom Fiscal, CPF Médico...")
+
             obs = st.text_area("Observações", value=conta["observacoes"] or "")
             
             btn_salvar = st.form_submit_button("💾 Salvar Alterações", use_container_width=True)
@@ -460,7 +498,7 @@ with tab_contas:
                 elif valor <= 0:
                     st.error("O valor deve ser maior que zero.")
                 else:
-                    salvar_edicao_direto(conta_id, desc.strip(), tipo, categoria, valor, venc.isoformat(), status, obs.strip())
+                    salvar_edicao_direto(conta_id, desc.strip(), tipo, categoria, valor, venc.isoformat(), status, obs.strip(), dedutivel=dedutivel, comp=comprovante.strip())
                     st.success("Conta atualizada com sucesso!")
                     st.rerun()
 
@@ -559,12 +597,7 @@ with tab_novo:
             
         with col_f2:
             novo_venc = st.date_input("Data de Vencimento*", value=date.today())
-            
-            categorias_sugeridas = [
-                "Moradia", "Alimentação", "Transporte", "Contas Básicas",
-                "Saúde", "Educação", "Lazer", "Cartão", "Salário", "Serviços", "Investimentos", "Outros"
-            ]
-            nova_cat = st.selectbox("Categoria*", categorias_sugeridas)
+            nova_cat = st.selectbox("Categoria*", CATEGORIAS_PADRAO)
             cat_personalizada = st.text_input("Ou digite uma nova categoria (opcional):", placeholder="Ex: Manutenção Carro")
             
         st.markdown("---")
@@ -572,9 +605,11 @@ with tab_novo:
         with col_f3:
             novo_status = st.selectbox("Status Inicial", ["Pendente", "Pago"])
             meses_recorrencia = st.number_input("Repetir por quantos meses? (1 = apenas uma vez)", min_value=1, max_value=48, value=1)
+            dedutivel_novo = st.checkbox("🎯 Despesa Dedutível / Trabalho (Carro, Saúde ou Educação)", value=True if any(k in nova_cat for k in ["Combustível", "Manutenção", "Pneus", "Seguro", "Saúde", "Educação"]) else False, help="Marque se essa despesa foi gasta com o carro ou saúde/educação para abater no Imposto de Renda")
             
         with col_f4:
             novas_obs = st.text_area("Observações (opcional)", placeholder="Detalhes, chave Pix, número do código de barras...")
+            comprovante_novo = st.text_input("Comprovante Fiscal / Recibo (opcional)", placeholder="Ex: NF-e 4521, Cupom Fiscal, CPF Médico...")
 
         submit = st.form_submit_button("💾 Salvar Lançamento", use_container_width=True)
         
@@ -585,22 +620,260 @@ with tab_novo:
                 st.error("O valor deve ser maior que zero.")
             else:
                 cat_final = cat_personalizada.strip() if cat_personalizada.strip() else nova_cat
-                database.adicionar_conta(
-                    descricao=nova_desc.strip(),
-                    tipo=novo_tipo,
-                    categoria=cat_final,
-                    valor=novo_valor,
-                    data_vencimento=novo_venc.isoformat(),
-                    status=novo_status,
-                    recorrente=1 if meses_recorrencia > 1 else 0,
-                    observacoes=novas_obs.strip(),
-                    meses_recorrencia=meses_recorrencia
-                )
+                try:
+                    database.adicionar_conta(
+                        descricao=nova_desc.strip(),
+                        tipo=novo_tipo,
+                        categoria=cat_final,
+                        valor=novo_valor,
+                        data_vencimento=novo_venc.isoformat(),
+                        status=novo_status,
+                        recorrente=1 if meses_recorrencia > 1 else 0,
+                        observacoes=novas_obs.strip(),
+                        meses_recorrencia=meses_recorrencia,
+                        dedutivel_irpf=1 if dedutivel_novo else 0,
+                        comprovante_fiscal=comprovante_novo.strip()
+                    )
+                except:
+                    database.adicionar_conta(
+                        descricao=nova_desc.strip(),
+                        tipo=novo_tipo,
+                        categoria=cat_final,
+                        valor=novo_valor,
+                        data_vencimento=novo_venc.isoformat(),
+                        status=novo_status,
+                        recorrente=1 if meses_recorrencia > 1 else 0,
+                        observacoes=novas_obs.strip(),
+                        meses_recorrencia=meses_recorrencia
+                    )
                 st.success(f"✅ Conta '{nova_desc}' cadastrada com sucesso ({meses_recorrencia} lançamento(s))!")
                 st.rerun()
 
 # ==========================================
-# ABA 4: ANÁLISE POR CATEGORIAS & RELATÓRIOS
+# ABA 4: 🚗 MOTORISTA DE APP & IMPOSTO DE RENDA
+# ==========================================
+with tab_motorista:
+    st.subheader("🚗 Gestor do Motorista de Aplicativo & Imposto de Renda (IRPF)")
+    st.caption("Acompanhe o faturamento dos apps, descubra seu lucro real no bolso e veja como abater gastos com o carro e saúde na sua declaração.")
+    
+    col_mot_ano, col_mot_vazio = st.columns([1.5, 3])
+    with col_mot_ano:
+        ano_mot = st.selectbox("Selecione o Ano Fiscal para análise:", anos_disponiveis, index=0, key="ano_motorista_sel")
+        
+    contas_ano_mot = database.listar_contas(ano=ano_mot)
+    df_mot = pd.DataFrame(contas_ano_mot)
+    
+    if df_mot.empty:
+        st.info(f"Nenhum lançamento encontrado para o ano de {ano_mot}.")
+    else:
+        # Palavras-chave inteligentes para categorização
+        def eh_faturamento_app(row):
+            texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
+            return row["tipo"] == "Receita" and any(k in texto for k in ["uber", "99", "app", "corrida", "faturamento", "passageiro", "viagem", "transporte"])
+            
+        def eh_gasto_carro(row):
+            texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
+            return row["tipo"] == "Despesa" and (
+                any(k in texto for k in ["combustível", "combustivel", "gasolina", "etanol", "gnv", "manutenção", "manutencao", "peça", "peca", "oficina", "mecanic", "pneu", "alinhamento", "seguro", "lavagem", "estética", "ipva", "licenciamento", "aluguel", "parcela", "celular", "internet"])
+                or row.get("dedutivel_irpf") == 1
+            )
+            
+        def eh_saude(row):
+            texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
+            return row["tipo"] == "Despesa" and any(k in texto for k in ["saúde", "saude", "médic", "medic", "dentist", "exame", "hospital", "remédio", "remedio", "farmácia", "farmacia", "psicolog", "plano de saúde"])
+            
+        def eh_educacao(row):
+            texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
+            return row["tipo"] == "Despesa" and any(k in texto for k in ["educação", "educacao", "faculdade", "escola", "curso", "colégio", "colegio"])
+
+        df_fat = df_mot[df_mot.apply(eh_faturamento_app, axis=1)]
+        fat_bruto = df_fat["valor"].sum()
+        
+        # Se não houver categoria explícita de app mas tiver receitas, usa as receitas do ano como base
+        if fat_bruto == 0:
+            fat_bruto = df_mot[df_mot["tipo"] == "Receita"]["valor"].sum()
+
+        df_carro = df_mot[df_mot.apply(eh_gasto_carro, axis=1)]
+        custo_carro = df_carro["valor"].sum()
+        
+        lucro_liquido_real = fat_bruto - custo_carro
+        
+        df_gas = df_mot[df_mot["categoria"].str.contains("Combustível|combustivel|gasolina", case=False, na=False)]
+        gasto_gas = df_gas["valor"].sum()
+        pct_gas = (gasto_gas / fat_bruto * 100) if fat_bruto > 0 else 0
+        
+        df_saude = df_mot[df_mot.apply(eh_saude, axis=1)]
+        total_saude = df_saude["valor"].sum()
+        
+        df_edu = df_mot[df_mot.apply(eh_educacao, axis=1)]
+        total_edu = df_edu["valor"].sum()
+
+        # --- SEÇÃO 1: CARDS DE LUCRO DO MOTORISTA ---
+        st.markdown("### 📊 Faturamento dos Apps vs. Custos do Veículo")
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        with mc1:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">💰 Faturamento Bruto (Apps)</div>
+                <div class="kpi-value" style="color: #4ade80;">{formatar_moeda(fat_bruto)}</div>
+                <div class="kpi-sub">Total recebido da Uber / 99</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with mc2:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">🚗 Custos Totais do Veículo</div>
+                <div class="kpi-value" style="color: #f87171;">{formatar_moeda(custo_carro)}</div>
+                <div class="kpi-sub">Gasolina + Oficina + Pneus + etc.</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with mc3:
+            cor_lucro = "#38bdf8" if lucro_liquido_real >= 0 else "#f87171"
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">💵 Lucro Líquido Real</div>
+                <div class="kpi-value" style="color: {cor_lucro};">{formatar_moeda(lucro_liquido_real)}</div>
+                <div class="kpi-sub">O que sobra de verdade no seu bolso</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with mc4:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">⛽ Gasto com Combustível</div>
+                <div class="kpi-value" style="color: #fbbf24;">{formatar_moeda(gasto_gas)}</div>
+                <div class="kpi-sub">Compromete <b>{pct_gas:.1f}%</b> do faturamento</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # --- SEÇÃO 2: SIMULADOR DE IMPOSTO DE RENDA (40% vs LIVRO CAIXA) ---
+        st.markdown("### ⚖️ Comparador Tributário: Qual regra dá menos imposto?")
+        st.write("A legislação brasileira permite que o motorista de aplicativo escolha a forma mais vantajosa para declarar os rendimentos de transporte de passageiros:")
+
+        # Regra 1: 40% Isento Presumido (Lei 7.713/88 art. 9º)
+        isencao_presumida_40 = fat_bruto * 0.40
+        base_tributavel_presumida = fat_bruto * 0.60
+        
+        # Regra 2: Livro Caixa (Custos Reais Comprovados)
+        base_tributavel_livro_caixa = max(0.0, fat_bruto - custo_carro)
+
+        sim_col1, sim_col2 = st.columns(2)
+        with sim_col1:
+            st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 18px;">
+                <h4 style="margin-top:0; color: #38bdf8;">Opção A: Isenção Presumida de 40% (Lei 7.713/88)</h4>
+                <p style="font-size: 0.85rem; color: #94a3b8;">
+                    A lei presume que 40% do seu ganho foi gasto com o carro, <b>sem precisar provar notas fiscais</b>.
+                </p>
+                <div style="margin: 12px 0;">
+                    <div>🟢 <b>Parcela Isenta de Imposto (40%):</b> <span style="color:#4ade80; font-size:1.1rem; font-weight:bold;">{formatar_moeda(isencao_presumida_40)}</span></div>
+                    <div style="margin-top: 6px;">🟡 <b>Base Sujeita a Imposto (60%):</b> <span style="color:#fbbf24; font-size:1.1rem; font-weight:bold;">{formatar_moeda(base_tributavel_presumida)}</span></div>
+                </div>
+                <small style="color: #64748b;">Mais simples: não exige guardar todas as notas fiscais do ano.</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with sim_col2:
+            st.markdown(f"""
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 18px;">
+                <h4 style="margin-top:0; color: #a78bfa;">Opção B: Livro Caixa (Despesas Reais do Veículo)</h4>
+                <p style="font-size: 0.85rem; color: #94a3b8;">
+                    Você abate o <b>valor exato</b> que gastou com combustível, mecânica, pneus, etc. (comprovado com nota fiscal e CPF).
+                </p>
+                <div style="margin: 12px 0;">
+                    <div>🟢 <b>Total de Despesas Comprovadas:</b> <span style="color:#4ade80; font-size:1.1rem; font-weight:bold;">{formatar_moeda(custo_carro)}</span></div>
+                    <div style="margin-top: 6px;">🟡 <b>Base Sujeita a Imposto:</b> <span style="color:#fbbf24; font-size:1.1rem; font-weight:bold;">{formatar_moeda(base_tributavel_livro_caixa)}</span></div>
+                </div>
+                <small style="color: #64748b;">Mais vantajoso quando os custos do carro ultrapassam 40% do faturamento.</small>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if custo_carro > isencao_presumida_40:
+            economia = custo_carro - isencao_presumida_40
+            st.success(f"""
+            🏆 **Veredito do Gestor: A Opção B (Livro Caixa com Notas) é MAIS VANTAJOSA para você em {ano_mot}!**  
+            Seus custos comprovados com o carro ({formatar_moeda(custo_carro)}) foram **{formatar_moeda(economia)} maiores** do que a isenção padrão de 40%.  
+            Declarando com suas notas de combustível e manutenção, a sua renda sujeita a imposto cai para **{formatar_moeda(base_tributavel_livro_caixa)}**!
+            """)
+        else:
+            st.info(f"""
+            🏆 **Veredito do Gestor: A Opção A (Isenção Presumida de 40%) é MAIS VANTAJOSA para você em {ano_mot}!**  
+            A isenção automática da lei ({formatar_moeda(isencao_presumida_40)}) é maior do que as despesas anotadas do carro ({formatar_moeda(custo_carro)}).  
+            Você pode abater 40% direto no Carnê-Leão / IRPF com tranquilidade e sem dor de cabeça de notas fiscais!
+            """)
+
+        st.markdown("---")
+
+        # --- SEÇÃO 3: DEDUÇÕES PESSOAIS (SAÚDE E EDUCAÇÃO) ---
+        st.markdown("### 🩺 Deduções Pessoais de Imposto (Saúde & Educação)")
+        st.caption("Além dos custos do carro, estas despesas reduzem diretamente o imposto na sua Declaração Anual de Ajuste:")
+        
+        ded_c1, ded_c2 = st.columns(2)
+        with ded_c1:
+            st.markdown(f"""
+            <div style="padding: 16px; background: rgba(34, 197, 94, 0.08); border-left: 4px solid #22c55e; border-radius: 8px;">
+                <h4 style="margin:0; color: #4ade80;">🩺 Gastos com Saúde: {formatar_moeda(total_saude)}</h4>
+                <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 6px;">
+                    <b>100% dedutível (sem teto limite)!</b> Consultas, dentista, plano de saúde, exames e fisioterapia. Guarde os recibos com o CPF ou CNPJ do profissional.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        with ded_c2:
+            st.markdown(f"""
+            <div style="padding: 16px; background: rgba(56, 189, 248, 0.08); border-left: 4px solid #38bdf8; border-radius: 8px;">
+                <h4 style="margin:0; color: #38bdf8;">🎓 Gastos com Educação: {formatar_moeda(total_edu)}</h4>
+                <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 6px;">
+                    Escola dos filhos, faculdade ou cursos técnicos autorizados pelo MEC (limite anual de R$ 3.561,50 por pessoa).
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # --- SEÇÃO 4: GUIA DE COMPROVAÇÃO FISCAL ---
+        with st.expander("📖 Como Comprovar Despesas para a Receita Federal sem cair na Malha Fina (Clique para ver as dicas)", expanded=False):
+            st.markdown("""
+            ### 📌 Regras de Ouro para o Motorista de Aplicativo:
+            
+            1. ⛽ **No Posto de Combustível:**
+               * Sempre peça **NFC-e / Cupom Fiscal com o seu CPF impresso** na hora de abastecer.
+               * Pague sempre com cartão no seu nome ou Pix da sua conta para deixar o rastro bancário.
+            
+            2. 🔧 **Na Oficina Mecânica e Autopeças:**
+               * Peça **Nota Fiscal de Produtos (NF-e)** para autopeças e **Nota Fiscal de Serviços (NFS-e)** para a mão de obra da oficina.
+               * **Dica de ouro:** Peça para o mecânico colocar a **placa do seu carro** no campo de "Observações" da nota fiscal!
+            
+            3. 🚗 **Documentação do Veículo:**
+               * O carro deve estar no seu nome. Se for alugado (Localiza, Movida, Kovi), guarde os contratos e faturas no seu CPF.
+            
+            4. 🩺 **Médicos e Dentistas:**
+               * Sempre exija recibo assinado com o **CPF e CRM/CRO** do profissional, ou nota fiscal com CNPJ da clínica.
+            
+            5. 📁 **Guarda de Comprovantes:**
+               * A Receita Federal exige guardar todos os comprovantes por **5 anos**.
+               * **Dica prática:** Tire foto das notas com a câmera do celular e guarde em uma pasta no Google Drive/celular para evitar que a tinta da nota térmica apague com o tempo!
+            """)
+
+        # --- SEÇÃO 5: EXPORTAR RELATÓRIO DO MOTORISTA ---
+        df_dedutiveis = df_mot[df_mot.apply(lambda r: eh_gasto_carro(r) or eh_saude(r) or eh_educacao(r) or eh_faturamento_app(r), axis=1)]
+        if not df_dedutiveis.empty:
+            csv_mot = df_dedutiveis.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label=f"📥 Baixar Relatório Fiscal de {ano_mot} (CSV para Contador / Receita)",
+                data=csv_mot,
+                file_name=f"relatorio_fiscal_motorista_{ano_mot}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
+# ==========================================
+# ABA 5: ANÁLISE POR CATEGORIAS & RELATÓRIOS
 # ==========================================
 with tab_relatorios:
     st.subheader("📈 Análise Detalhada de Despesas e Receitas")

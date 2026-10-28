@@ -24,9 +24,21 @@ def init_db():
             status TEXT NOT NULL, -- 'Pendente', 'Pago', 'Atrasado'
             recorrente INTEGER DEFAULT 0, -- 0: Não, 1: Sim
             observacoes TEXT,
+            dedutivel_irpf INTEGER DEFAULT 0, -- 1: Sim (Carro/Saúde/Educação)
+            comprovante_fiscal TEXT, -- Número NF, CNPJ/CPF ou recibo
             data_cadastro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # Migrações seguras de colunas caso a tabela já exista
+    try:
+        cursor.execute("ALTER TABLE contas ADD COLUMN dedutivel_irpf INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE contas ADD COLUMN comprovante_fiscal TEXT")
+    except:
+        pass
+
     conn.commit()
     conn.close()
     atualizar_status_atrasados()
@@ -44,7 +56,7 @@ def atualizar_status_atrasados():
     conn.commit()
     conn.close()
 
-def adicionar_conta(descricao, tipo, categoria, valor, data_vencimento, status="Pendente", recorrente=0, observacoes="", meses_recorrencia=1):
+def adicionar_conta(descricao, tipo, categoria, valor, data_vencimento, status="Pendente", recorrente=0, observacoes="", meses_recorrencia=1, dedutivel_irpf=0, comprovante_fiscal=""):
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -69,8 +81,8 @@ def adicionar_conta(descricao, tipo, categoria, valor, data_vencimento, status="
             data_pagamento = None
 
         cursor.execute("""
-            INSERT INTO contas (descricao, tipo, categoria, valor, data_vencimento, data_pagamento, status, recorrente, observacoes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO contas (descricao, tipo, categoria, valor, data_vencimento, data_pagamento, status, recorrente, observacoes, dedutivel_irpf, comprovante_fiscal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             descricao if meses_recorrencia == 1 else f"{descricao} ({i+1}/{meses_recorrencia})",
             tipo,
@@ -80,7 +92,9 @@ def adicionar_conta(descricao, tipo, categoria, valor, data_vencimento, status="
             data_pagamento,
             status,
             1 if recorrente or meses_recorrencia > 1 else 0,
-            observacoes
+            observacoes,
+            1 if dedutivel_irpf else 0,
+            comprovante_fiscal
         ))
         
     conn.commit()
@@ -147,7 +161,7 @@ def obter_conta(conta_id):
     conn.close()
     return dict(row) if row else None
 
-def editar_conta(conta_id, descricao, tipo, categoria, valor, data_vencimento, status, observacoes=""):
+def editar_conta(conta_id, descricao, tipo, categoria, valor, data_vencimento, status, observacoes="", dedutivel_irpf=0, comprovante_fiscal=""):
     conn = get_connection()
     cursor = conn.cursor()
     if status == "Pago":
@@ -161,9 +175,9 @@ def editar_conta(conta_id, descricao, tipo, categoria, valor, data_vencimento, s
             
     cursor.execute("""
         UPDATE contas
-        SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?
+        SET descricao = ?, tipo = ?, categoria = ?, valor = ?, data_vencimento = ?, data_pagamento = ?, status = ?, observacoes = ?, dedutivel_irpf = ?, comprovante_fiscal = ?
         WHERE id = ?
-    """, (descricao, tipo, categoria, float(valor), str(data_vencimento), dt_pag, status, observacoes, conta_id))
+    """, (descricao, tipo, categoria, float(valor), str(data_vencimento), dt_pag, status, observacoes, 1 if dedutivel_irpf else 0, comprovante_fiscal, conta_id))
     conn.commit()
     conn.close()
 
