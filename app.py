@@ -658,7 +658,8 @@ with tab_motorista:
     
     col_mot_ano, col_mot_vazio = st.columns([1.5, 3])
     with col_mot_ano:
-        ano_mot = st.selectbox("Selecione o Ano Fiscal para análise:", anos_disponiveis, index=0, key="ano_motorista_sel")
+        idx_padrao_mot = anos_disponiveis.index(ano_atual) if ano_atual in anos_disponiveis else 0
+        ano_mot = st.selectbox("Selecione o Ano Fiscal para análise:", anos_disponiveis, index=idx_padrao_mot, key="ano_motorista_sel")
         
     contas_ano_mot = database.listar_contas(ano=ano_mot)
     df_mot = pd.DataFrame(contas_ano_mot)
@@ -955,3 +956,20 @@ with tab_backup:
                     f_out.write(arquivo_upload.getbuffer())
                 st.success("✅ Banco de dados restaurado com sucesso!")
                 st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### 🗑️ Limpar Todos os Lançamentos (Zerar Gestor)")
+    st.write("Se você cadastrou dados de teste e deseja limpar o sistema para começar com a folha 100% em branco:")
+    
+    col_z1, col_z2 = st.columns([2, 1.2])
+    with col_z1:
+        confirma_limpar = st.checkbox("Tenho certeza de que desejo excluir todos os lançamentos e zerar o banco.")
+    with col_z2:
+        if st.button("🔥 Apagar Tudo e Zerar", type="primary", use_container_width=True, disabled=not confirma_limpar):
+            conn = database.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM contas")
+            conn.commit()
+            conn.close()
+            st.success("Banco de dados zerado com sucesso!")
+            st.rerun()
