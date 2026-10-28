@@ -83,8 +83,6 @@ if not st.session_state["autenticado"]:
                     st.rerun()
                 else:
                     st.error("Senha incorreta. Tente novamente.")
-                    
-        st.caption("<div style='text-align: center; color: #64748b;'>Senha padrão local: <b>1234</b> (personalizável no secrets.toml)</div>", unsafe_allow_html=True)
     st.stop()
 
 
