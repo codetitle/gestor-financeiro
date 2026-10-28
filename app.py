@@ -598,7 +598,9 @@ with tab_novo:
             "Outro valor / Digitar manualmente": 0.00
         }
         
-        c_sm1, c_sm2, c_sm3 = st.columns([1.5, 1, 1.2])
+        c_nome, c_sm1 = st.columns([1.5, 1.5])
+        with c_nome:
+            nome_filho = st.text_input("Nome do Filho(a) / Beneficiário(a) (opcional):", placeholder="Ex: Lucas, Sofia, etc.", key="nome_beneficiario_pensao")
         with c_sm1:
             opcao_sm = st.selectbox("Salário Mínimo Vigente:", list(SALARIOS_MINIMOS.keys()), index=1)
             if opcao_sm == "Outro valor / Digitar manualmente":
@@ -607,13 +609,14 @@ with tab_novo:
                 sm_base = SALARIOS_MINIMOS[opcao_sm]
                 st.caption(f"Salário Mínimo Base: **{formatar_moeda(sm_base)}**")
                 
+        c_sm2, c_sm3 = st.columns([1.5, 1.5])
         with c_sm2:
             pct_pensao = st.number_input("Porcentagem (%):", min_value=1.0, max_value=100.0, value=30.0, step=0.5, format="%.2f")
             
         with c_sm3:
             valor_calculado_pensao = sm_base * (pct_pensao / 100.0)
             st.markdown(f"""
-            <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 8px; padding: 10px; text-align: center;">
+            <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 8px; padding: 10px; text-align: center; margin-top: 8px;">
                 <div style="font-size: 0.8rem; color: #94a3b8;">VALOR EXATO CALCULADO</div>
                 <div style="font-size: 1.4rem; font-weight: bold; color: #4ade80;">{formatar_moeda(valor_calculado_pensao)}</div>
             </div>
@@ -636,33 +639,38 @@ with tab_novo:
                         ano_p += 1
                 dt_inicial = date(ano_p, mes_p, dia_venc_pensao)
                 
+                rotulo_beneficiario = f" - {nome_filho.strip()}" if nome_filho.strip() else ""
+                desc_pensao = f"Pensão Alimentícia{rotulo_beneficiario} ({pct_pensao:.1f}% S.M.)"
+                obs_beneficiario = f"Beneficiário(a): {nome_filho.strip()}. " if nome_filho.strip() else ""
+                obs_pensao = f"{obs_beneficiario}Pensão de {pct_pensao:.1f}% sobre o Salário Mínimo de {formatar_moeda(sm_base)}. Dedutível IRPF."
+
                 try:
                     database.adicionar_conta(
-                        descricao=f"Pensão Alimentícia ({pct_pensao:.1f}% S.M.)",
+                        descricao=desc_pensao,
                         tipo="Despesa",
                         categoria="⚖️ Pensão Alimentícia (Dedutível IRPF)",
                         valor=valor_calculado_pensao,
                         data_vencimento=dt_inicial.isoformat(),
                         status="Pendente",
                         recorrente=1 if meses_pensao > 1 else 0,
-                        observacoes=f"Pensão de {pct_pensao:.1f}% sobre o Salário Mínimo de {formatar_moeda(sm_base)}. Dedutível IRPF.",
+                        observacoes=obs_pensao,
                         meses_recorrencia=meses_pensao,
                         dedutivel_irpf=1,
                         comprovante_fiscal="Acordo / Decisão Judicial"
                     )
                 except:
                     database.adicionar_conta(
-                        descricao=f"Pensão Alimentícia ({pct_pensao:.1f}% S.M.)",
+                        descricao=desc_pensao,
                         tipo="Despesa",
                         categoria="⚖️ Pensão Alimentícia (Dedutível IRPF)",
                         valor=valor_calculado_pensao,
                         data_vencimento=dt_inicial.isoformat(),
                         status="Pendente",
                         recorrente=1 if meses_pensao > 1 else 0,
-                        observacoes=f"Pensão de {pct_pensao:.1f}% sobre o Salário Mínimo de {formatar_moeda(sm_base)}.",
+                        observacoes=obs_pensao,
                         meses_recorrencia=meses_pensao
                     )
-                st.success(f"✅ Pensão de {formatar_moeda(valor_calculado_pensao)} lançada com sucesso para {meses_pensao} meses!")
+                st.success(f"✅ {desc_pensao} no valor de {formatar_moeda(valor_calculado_pensao)} lançada com sucesso para {meses_pensao} meses!")
                 st.rerun()
 
     st.markdown("---")
