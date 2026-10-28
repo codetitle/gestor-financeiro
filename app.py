@@ -673,11 +673,23 @@ with tab_motorista:
             return row["tipo"] == "Receita" and any(k in texto for k in ["uber", "99", "app", "corrida", "faturamento", "passageiro", "viagem", "transporte"])
             
         def eh_gasto_carro(row):
+            if row["tipo"] != "Despesa":
+                return False
             texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
-            return row["tipo"] == "Despesa" and (
-                any(k in texto for k in ["combustível", "combustivel", "gasolina", "etanol", "gnv", "manutenção", "manutencao", "peça", "peca", "oficina", "mecanic", "pneu", "alinhamento", "seguro", "lavagem", "estética", "ipva", "licenciamento", "aluguel", "parcela", "celular", "internet"])
-                or row.get("dedutivel_irpf") == 1
-            )
+            
+            # Internet e Celular: só conta como custo do motorista se for explicitamente do app/trabalho
+            if "internet" in texto or "celular" in texto:
+                return any(k in texto for k in ["(app)", "uber", "99", "motorista", "trabalho"])
+                
+            termos_carro = [
+                "combustível", "combustivel", "gasolina", "etanol", "gnv", "diesel",
+                "manutenção", "manutencao", "peça", "peca", "oficina", "mecânic", "mecanic",
+                "pneu", "alinhamento", "balanceamento", "troca de óleo", "oleo",
+                "seguro auto", "seguro do carro", "lavagem", "estética automotiva",
+                "ipva", "licenciamento", "aluguel de carro", "aluguel carro",
+                "parcela do carro", "financiamento carro"
+            ]
+            return any(k in texto for k in termos_carro)
             
         def eh_saude(row):
             texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
