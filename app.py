@@ -301,6 +301,7 @@ CATEGORIAS_PADRAO = [
     "🚗 Parcela / Aluguel Carro",
     "📄 IPVA & Licenciamento",
     "💰 Faturamento Uber/99",
+    "⚖️ Pensão Alimentícia (Dedutível IRPF)",
     "🩺 Saúde (Dedutível IRPF)",
     "🎓 Educação (Dedutível IRPF)",
     "Moradia",
@@ -587,6 +588,85 @@ with tab_contas:
 with tab_novo:
     st.subheader("➕ Cadastrar Nova Conta ou Receita")
     
+    with st.expander("🧮 Calculadora Automática: Pensão Alimentícia (% do Salário Mínimo)", expanded=False):
+        st.write("Calcule o valor exato da pensão estipulada em porcentagem do salário mínimo e lance diretamente no seu gestor:")
+        
+        SALARIOS_MINIMOS = {
+            "2026 (Previsão R$ 1.621,00)": 1621.00,
+            "2025 (Oficial R$ 1.518,00)": 1518.00,
+            "2024 (R$ 1.412,00)": 1412.00,
+            "Outro valor / Digitar manualmente": 0.00
+        }
+        
+        c_sm1, c_sm2, c_sm3 = st.columns([1.5, 1, 1.2])
+        with c_sm1:
+            opcao_sm = st.selectbox("Salário Mínimo Vigente:", list(SALARIOS_MINIMOS.keys()), index=1)
+            if opcao_sm == "Outro valor / Digitar manualmente":
+                sm_base = st.number_input("Digite o Salário Mínimo (R$):", min_value=1.0, value=1518.00, step=10.0, format="%.2f")
+            else:
+                sm_base = SALARIOS_MINIMOS[opcao_sm]
+                st.caption(f"Salário Mínimo Base: **{formatar_moeda(sm_base)}**")
+                
+        with c_sm2:
+            pct_pensao = st.number_input("Porcentagem (%):", min_value=1.0, max_value=100.0, value=30.0, step=0.5, format="%.2f")
+            
+        with c_sm3:
+            valor_calculado_pensao = sm_base * (pct_pensao / 100.0)
+            st.markdown(f"""
+            <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; border-radius: 8px; padding: 10px; text-align: center;">
+                <div style="font-size: 0.8rem; color: #94a3b8;">VALOR EXATO CALCULADO</div>
+                <div style="font-size: 1.4rem; font-weight: bold; color: #4ade80;">{formatar_moeda(valor_calculado_pensao)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+        col_cp1, col_cp2 = st.columns([2, 1.2])
+        with col_cp1:
+            st.info("⚖️ **Dica de Ouro:** Pensão alimentícia judicial é **100% dedutível do seu Imposto de Renda (IRPF)**! Todo valor pago reduz a sua renda tributável na declaração.")
+        with col_cp2:
+            meses_pensao = st.number_input("Repetir por quantos meses?", min_value=1, max_value=48, value=12, key="meses_pensao_calc")
+            dia_venc_pensao = st.number_input("Dia do vencimento no mês:", min_value=1, max_value=28, value=10, key="dia_venc_pensao_calc")
+            
+            if st.button("➕ Lançar Pensão no Gestor", type="primary", use_container_width=True):
+                hoje = date.today()
+                ano_p = hoje.year
+                mes_p = hoje.month
+                if hoje.day > dia_venc_pensao:
+                    mes_p = (mes_p % 12) + 1
+                    if mes_p == 1:
+                        ano_p += 1
+                dt_inicial = date(ano_p, mes_p, dia_venc_pensao)
+                
+                try:
+                    database.adicionar_conta(
+                        descricao=f"Pensão Alimentícia ({pct_pensao:.1f}% S.M.)",
+                        tipo="Despesa",
+                        categoria="⚖️ Pensão Alimentícia (Dedutível IRPF)",
+                        valor=valor_calculado_pensao,
+                        data_vencimento=dt_inicial.isoformat(),
+                        status="Pendente",
+                        recorrente=1 if meses_pensao > 1 else 0,
+                        observacoes=f"Pensão de {pct_pensao:.1f}% sobre o Salário Mínimo de {formatar_moeda(sm_base)}. Dedutível IRPF.",
+                        meses_recorrencia=meses_pensao,
+                        dedutivel_irpf=1,
+                        comprovante_fiscal="Acordo / Decisão Judicial"
+                    )
+                except:
+                    database.adicionar_conta(
+                        descricao=f"Pensão Alimentícia ({pct_pensao:.1f}% S.M.)",
+                        tipo="Despesa",
+                        categoria="⚖️ Pensão Alimentícia (Dedutível IRPF)",
+                        valor=valor_calculado_pensao,
+                        data_vencimento=dt_inicial.isoformat(),
+                        status="Pendente",
+                        recorrente=1 if meses_pensao > 1 else 0,
+                        observacoes=f"Pensão de {pct_pensao:.1f}% sobre o Salário Mínimo de {formatar_moeda(sm_base)}.",
+                        meses_recorrencia=meses_pensao
+                    )
+                st.success(f"✅ Pensão de {formatar_moeda(valor_calculado_pensao)} lançada com sucesso para {meses_pensao} meses!")
+                st.rerun()
+
+    st.markdown("---")
+    
     with st.form("form_novo_lancamento", clear_on_submit=True):
         col_f1, col_f2 = st.columns(2)
         
@@ -695,6 +775,10 @@ with tab_motorista:
             texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
             return row["tipo"] == "Despesa" and any(k in texto for k in ["saúde", "saude", "médic", "medic", "dentist", "exame", "hospital", "remédio", "remedio", "farmácia", "farmacia", "psicolog", "plano de saúde"])
             
+        def eh_pensao(row):
+            texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
+            return row["tipo"] == "Despesa" and any(k in texto for k in ["pensão", "pensao", "alimentícia", "alimenticia"])
+
         def eh_educacao(row):
             texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
             return row["tipo"] == "Despesa" and any(k in texto for k in ["educação", "educacao", "faculdade", "escola", "curso", "colégio", "colegio"])
@@ -718,6 +802,9 @@ with tab_motorista:
         df_saude = df_mot[df_mot.apply(eh_saude, axis=1)]
         total_saude = df_saude["valor"].sum()
         
+        df_pensao = df_mot[df_mot.apply(eh_pensao, axis=1)]
+        total_pensao = df_pensao["valor"].sum()
+
         df_edu = df_mot[df_mot.apply(eh_educacao, axis=1)]
         total_edu = df_edu["valor"].sum()
 
@@ -822,27 +909,37 @@ with tab_motorista:
 
         st.markdown("---")
 
-        # --- SEÇÃO 3: DEDUÇÕES PESSOAIS (SAÚDE E EDUCAÇÃO) ---
-        st.markdown("### 🩺 Deduções Pessoais de Imposto (Saúde & Educação)")
+        # --- SEÇÃO 3: DEDUÇÕES PESSOAIS (SAÚDE, PENSÃO E EDUCAÇÃO) ---
+        st.markdown("### 🩺 Deduções Pessoais de Imposto (Saúde, Pensão & Educação)")
         st.caption("Além dos custos do carro, estas despesas reduzem diretamente o imposto na sua Declaração Anual de Ajuste:")
         
-        ded_c1, ded_c2 = st.columns(2)
+        ded_c1, ded_c2, ded_c3 = st.columns(3)
         with ded_c1:
             st.markdown(f"""
             <div style="padding: 16px; background: rgba(34, 197, 94, 0.08); border-left: 4px solid #22c55e; border-radius: 8px;">
-                <h4 style="margin:0; color: #4ade80;">🩺 Gastos com Saúde: {formatar_moeda(total_saude)}</h4>
+                <h4 style="margin:0; color: #4ade80;">🩺 Saúde: {formatar_moeda(total_saude)}</h4>
                 <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 6px;">
-                    <b>100% dedutível (sem teto limite)!</b> Consultas, dentista, plano de saúde, exames e fisioterapia. Guarde os recibos com o CPF ou CNPJ do profissional.
+                    <b>100% dedutível (sem teto)!</b> Consultas, dentista, plano de saúde e exames.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with ded_c2:
+            st.markdown(f"""
+            <div style="padding: 16px; background: rgba(168, 85, 247, 0.08); border-left: 4px solid #a855f7; border-radius: 8px;">
+                <h4 style="margin:0; color: #c084fc;">⚖️ Pensão: {formatar_moeda(total_pensao)}</h4>
+                <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 6px;">
+                    <b>100% dedutível do IRPF!</b> Pensão judicial paga reduz diretamente sua base de imposto.
                 </p>
             </div>
             """, unsafe_allow_html=True)
             
-        with ded_c2:
+        with ded_c3:
             st.markdown(f"""
             <div style="padding: 16px; background: rgba(56, 189, 248, 0.08); border-left: 4px solid #38bdf8; border-radius: 8px;">
-                <h4 style="margin:0; color: #38bdf8;">🎓 Gastos com Educação: {formatar_moeda(total_edu)}</h4>
+                <h4 style="margin:0; color: #38bdf8;">🎓 Educação: {formatar_moeda(total_edu)}</h4>
                 <p style="font-size: 0.85rem; color: #cbd5e1; margin-top: 6px;">
-                    Escola dos filhos, faculdade ou cursos técnicos autorizados pelo MEC (limite anual de R$ 3.561,50 por pessoa).
+                    Faculdade, cursos e escola (limite legal anual de R$ 3.561,50).
                 </p>
             </div>
             """, unsafe_allow_html=True)
@@ -874,7 +971,7 @@ with tab_motorista:
             """)
 
         # --- SEÇÃO 5: EXPORTAR RELATÓRIO DO MOTORISTA ---
-        df_dedutiveis = df_mot[df_mot.apply(lambda r: eh_gasto_carro(r) or eh_saude(r) or eh_educacao(r) or eh_faturamento_app(r), axis=1)]
+        df_dedutiveis = df_mot[df_mot.apply(lambda r: eh_gasto_carro(r) or eh_saude(r) or eh_pensao(r) or eh_educacao(r) or eh_faturamento_app(r), axis=1)]
         if not df_dedutiveis.empty:
             csv_mot = df_dedutiveis.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
