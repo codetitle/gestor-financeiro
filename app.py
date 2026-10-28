@@ -301,6 +301,7 @@ CATEGORIAS_PADRAO = [
     "🚗 Parcela / Aluguel Carro",
     "📄 IPVA & Licenciamento",
     "💰 Faturamento Uber/99",
+    "🏛️ Pensão por Morte / Benefício INSS",
     "⚖️ Pensão Alimentícia (Dedutível IRPF)",
     "🩺 Saúde (Dedutível IRPF)",
     "🎓 Educação (Dedutível IRPF)",
@@ -757,8 +758,13 @@ with tab_motorista:
     else:
         # Palavras-chave inteligentes para categorização
         def eh_faturamento_app(row):
+            if row["tipo"] != "Receita":
+                return False
             texto = f"{row.get('descricao', '')} {row.get('categoria', '')}".lower()
-            return row["tipo"] == "Receita" and any(k in texto for k in ["uber", "99", "app", "corrida", "faturamento", "passageiro", "viagem", "transporte"])
+            # Pensão por morte, benefício INSS, salário comum e aposentadoria NUNCA são faturamento de app
+            if any(k in texto for k in ["pensão", "pensao", "morte", "inss", "aposentadoria", "clt"]):
+                return False
+            return any(k in texto for k in ["uber", "99", "corrida", "passageiro", "indrive", "indriver", "faturamento uber", "faturamento app", "motorista"])
             
         def eh_gasto_carro(row):
             if row["tipo"] != "Despesa":
@@ -793,10 +799,6 @@ with tab_motorista:
 
         df_fat = df_mot[df_mot.apply(eh_faturamento_app, axis=1)]
         fat_bruto = df_fat["valor"].sum()
-        
-        # Se não houver categoria explícita de app mas tiver receitas, usa as receitas do ano como base
-        if fat_bruto == 0:
-            fat_bruto = df_mot[df_mot["tipo"] == "Receita"]["valor"].sum()
 
         df_carro = df_mot[df_mot.apply(eh_gasto_carro, axis=1)]
         custo_carro = df_carro["valor"].sum()
